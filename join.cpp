@@ -14,26 +14,36 @@
 #define BLOCK_OWNER(index,p,n) \
     ( ( ((p)*(index)+1)-1 ) / (n) )
 
+struct Row {
+    uint x, y;
+};
+
 using namespace std;
 int main (int argc, char *argv[]) {
-    int N = 100000;
+    // Init
+    int N = 1000;
     MPI_File Afile, Bfile;
     int id, p;
     MPI_Init (&argc, &argv);
-
     MPI_Comm_rank (MPI_COMM_WORLD, &id);
     MPI_Comm_size (MPI_COMM_WORLD, &p);
     int local_size = BLOCK_SIZE(id, p, N);
     int offset = BLOCK_LOW(id, p, N);
     // cout<<"Process "<<id<<" "<<local_size<<" "<<offset<<'\n';
-    uint *A = new uint[local_size];
-    uint *B = new uint[local_size];
 
+    // Make MPI datatype for row struct
+    MPI_Datatype dt_row;
+    MPI_Type_contiguous(2, MPI_UNSIGNED, &dt_row);
+    MPI_Type_commit(&dt_row);
+    Row *A = new Row[local_size];
+    Row *B = new Row[local_size];
+
+    // Open and read input files
     MPI_File_open(MPI_COMM_WORLD , "A", MPI_MODE_RDONLY, MPI_INFO_NULL, &Afile);
-    MPI_File_read_at_all(Afile, sizeof(uint) * offset, A, local_size, MPI_UNSIGNED, MPI_STATUS_IGNORE);
+    MPI_File_read_at_all(Afile, sizeof(Row) * offset, A, local_size, dt_row, MPI_STATUS_IGNORE);
     MPI_File_close(&Afile);
     MPI_File_open(MPI_COMM_WORLD , "B", MPI_MODE_RDONLY, MPI_INFO_NULL, &Bfile);
-    MPI_File_read_at_all(Bfile, sizeof(uint) * offset, B, local_size, MPI_UNSIGNED, MPI_STATUS_IGNORE);
+    MPI_File_read_at_all(Bfile, sizeof(Row) * offset, B, local_size, dt_row, MPI_STATUS_IGNORE);
     MPI_File_close(&Bfile);
 
     // Need arrays for count of elements to go to each process
@@ -63,8 +73,8 @@ int main (int argc, char *argv[]) {
 
     // Count the number of elements this process needs to send to others
     for (int i = 0; i < local_size; ++i) {
-        ++Acounts[A[i] % p]; 
-        ++Bcounts[B[i] % p]; 
+        ++Acounts[A[i].x % p]; 
+        ++Bcounts[B[i].x % p]; 
     }
 
     // Prefix sum on send counts to get offsets
@@ -74,14 +84,14 @@ int main (int argc, char *argv[]) {
     }
 
     // Actually divide elements into where they're supposed to go
-    uint *sendA = new uint[local_size];
-    uint *sendB = new uint[local_size];
+    Row *sendA = new Row[local_size];
+    Row *sendB = new Row[local_size];
     int sendProcA, sendProcB;
     for (int i = 0; i < local_size; ++i) {
-        sendProcA = A[i] % p;
+        sendProcA = A[i].x % p;
         sendA[Aoffsets[sendProcA] + Acounters[sendProcA]] = A[i];
         ++Acounters[sendProcA];
-        sendProcB = B[i] % p;
+        sendProcB = B[i].x % p;
         sendB[Boffsets[sendProcB] + Bcounters[sendProcB]] = B[i];
         ++Bcounters[sendProcB];
     }
@@ -107,25 +117,25 @@ int main (int argc, char *argv[]) {
     }
 
     // Create buffers with correct size and get elements this process will join
-    uint *Af = new uint[Asize];
-    uint *Bf = new uint[Bsize];
-    MPI_Alltoallv(sendA, Acounts, Aoffsets, MPI_UNSIGNED, Af, Acountsr, Aoffsetsr, MPI_UNSIGNED, MPI_COMM_WORLD);
-    MPI_Alltoallv(sendB, Bcounts, Boffsets, MPI_UNSIGNED, Bf, Bcountsr, Boffsetsr, MPI_UNSIGNED, MPI_COMM_WORLD);
+    Row *recvA = new Row[Asize];
+    Row *recvB = new Row[Bsize];
+    MPI_Alltoallv(sendA, Acounts, Aoffsets, dt_row, recvA, Acountsr, Aoffsetsr, dt_row, MPI_COMM_WORLD);
+    MPI_Alltoallv(sendB, Bcounts, Boffsets, dt_row, recvB, Bcountsr, Boffsetsr, dt_row, MPI_COMM_WORLD);
 
     // Logging to check correctness
     // cout<<"Process "<<id<<" sizes: ";
     // cout<<"A "<<Asize<<" B "<<Bsize<<"\t";
     // cout<<"\n";
     for (int i = 0; i < Asize; ++i) {
-        if (Af[i] % p != id) {
-            cout<<"ERROR: process "<<id<<" has element meant for process "<<Af[i] % p<<'\n';
+        if (recvA[i].x % p != id) {
+            cout<<"ERROR: process "<<id<<" has element meant for process "<<recvA[i].x % p<<'\n';
             MPI_Finalize ();
             break;
         }
     }
     for (int i = 0; i < Bsize; ++i) {
-        if (Bf[i] % p != id) {
-            cout<<"ERROR: process "<<id<<" has element meant for process "<<Bf[i] % p<<'\n';
+        if (recvB[i].x % p != id) {
+            cout<<"ERROR: process "<<id<<" has element meant for process "<<recvB[i].x % p<<'\n';
             break;
         }
     }
@@ -134,7 +144,7 @@ int main (int argc, char *argv[]) {
     int joinCount = 0;
     for (int i = 0; i < Asize; ++i) {
         for (int j = 0; j < Bsize; ++j) {
-            if (Af[i] == Bf[j]) {
+            if (recvA[i].x == recvB[j].x) {
                 ++joinCount;
             }
         }
