@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <cmath>
 #include <time.h>
+#include "btree/btree_set.h"
 
 #define MIN(a,b)  ((a)<(b)?(a):(b))
 #define BLOCK_LOW(id,p,n)  ((id)*(n)/(p))
@@ -126,27 +127,42 @@ int main (int argc, char *argv[]) {
     // cout<<"Process "<<id<<" sizes: ";
     // cout<<"A "<<Asize<<" B "<<Bsize<<"\t";
     // cout<<"\n";
-    for (int i = 0; i < Asize; ++i) {
-        if (recvA[i].x % p != id) {
-            cout<<"ERROR: process "<<id<<" has element meant for process "<<recvA[i].x % p<<'\n';
-            MPI_Finalize ();
-            break;
-        }
-    }
+    // for (int i = 0; i < Asize; ++i) {
+    //     if (recvA[i].x % p != id) {
+    //         cout<<"ERROR: process "<<id<<" has element meant for process "<<recvA[i].x % p<<'\n';
+    //         MPI_Finalize ();
+    //         break;
+    //     }
+    // }
+    // for (int i = 0; i < Bsize; ++i) {
+    //     if (recvB[i].x % p != id) {
+    //         cout<<"ERROR: process "<<id<<" has element meant for process "<<recvB[i].x % p<<'\n';
+    //         break;
+    //     }
+    // }
+
+    // Insert inner relation into btree_set for hash join 
+    btree::btree_set<uint> Bset; 
     for (int i = 0; i < Bsize; ++i) {
-        if (recvB[i].x % p != id) {
-            cout<<"ERROR: process "<<id<<" has element meant for process "<<recvB[i].x % p<<'\n';
-            break;
-        }
+        Bset.insert(recvB[i].x);
     }
 
-    // Count number of joined elements
+    // Count number of joined elements manually
     int joinCount = 0;
     for (int i = 0; i < Asize; ++i) {
         for (int j = 0; j < Bsize; ++j) {
             if (recvA[i].x == recvB[j].x) {
                 ++joinCount;
             }
+        }
+    }
+    cout<<"Process "<<id<<" join count: "<<joinCount<<"\n";
+
+    // Count number of joined elements with btree_set
+    joinCount = 0;
+    for (int i = 0; i < Asize; ++i) {
+        if (Bset.find(recvA[i].x) != Bset.end()) {
+            ++joinCount;
         }
     }
     cout<<"Process "<<id<<" join count: "<<joinCount<<"\n";
