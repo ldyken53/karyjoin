@@ -20,7 +20,7 @@ struct Row {
 
 using namespace std;
 int main (int argc, char *argv[]) {
-    int N = 1000;
+    int N = 1000000;
     Row *A = new Row[N];
     Row *B = new Row[N];
     srand (time(NULL));
@@ -30,15 +30,15 @@ int main (int argc, char *argv[]) {
         B[i].x = rand() % N; 
         B[i].y = rand() % N; 
     }
-    int joinCount = 0;
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            if (A[i].x == B[j].x) {
-                ++joinCount;
-            }
-        }
-    }
-    cout<<"Total join count: "<<joinCount<<'\n';
+    // int joinCount = 0;
+    // for (int i = 0; i < N; ++i) {
+    //     for (int j = 0; j < N; ++j) {
+    //         if (A[i].x == B[j].x) {
+    //             ++joinCount;
+    //         }
+    //     }
+    // }
+    // cout<<"Total join count: "<<joinCount<<'\n';
     MPI_File Afile, Bfile;
     int id, p;
     MPI_Init (&argc, &argv);

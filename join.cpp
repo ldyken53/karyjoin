@@ -18,11 +18,29 @@
 struct Row {
     uint x, y;
 };
+struct Row_Compare {
+    bool operator()(const Row a, const Row b) const {
+        // Compare based on first column
+        if (a.x < b.x) {
+            return true;
+        } else if (a.x > b.x) {
+            return false;
+        }
+        // If first column equal, use second
+        if (a.y < b.y) {
+            return true;
+        } else if (a.y > b.y) {
+            return false;
+        }
+        // If rows equal, return false
+        return false;
+    }
+};
 
 using namespace std;
 int main (int argc, char *argv[]) {
     // Init
-    int N = 1000;
+    int N = 1000000;
     MPI_File Afile, Bfile;
     int id, p;
     MPI_Init (&argc, &argv);
@@ -142,12 +160,17 @@ int main (int argc, char *argv[]) {
     // }
 
     // Insert inner relation into btree_set for hash join 
-    btree::btree_set<uint> Bset; 
+    // TODO: Should this be multiset to allow duplicate entries in B? or can we assume deduplicated relations
+    double start_time = MPI_Wtime();
+    btree::btree_set<Row, Row_Compare> Bset; 
     for (int i = 0; i < Bsize; ++i) {
-        Bset.insert(recvB[i].x);
+        Bset.insert(recvB[i]);
     }
+    double end_time = MPI_Wtime();
+    cout<<"Time to insert B into set: "<<end_time - start_time<<"\n";
 
     // Count number of joined elements manually
+    start_time = MPI_Wtime();
     int joinCount = 0;
     for (int i = 0; i < Asize; ++i) {
         for (int j = 0; j < Bsize; ++j) {
@@ -156,16 +179,24 @@ int main (int argc, char *argv[]) {
             }
         }
     }
-    cout<<"Process "<<id<<" join count: "<<joinCount<<"\n";
+    end_time = MPI_Wtime();
+    cout<<"Process "<<id<<" basic join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
 
-    // Count number of joined elements with btree_set
+    // Count number of joined elements with btree
+    start_time = MPI_Wtime();
     joinCount = 0;
     for (int i = 0; i < Asize; ++i) {
-        if (Bset.find(recvA[i].x) != Bset.end()) {
-            ++joinCount;
-        }
+        // Get lower and upper bound of elements with the same x column
+        Row lower_bound = {recvA[i].x, std::numeric_limits<uint>::min()};
+        Row upper_bound = {recvA[i].x, std::numeric_limits<uint>::max()};
+        auto lower = Bset.lower_bound(lower_bound);
+        auto upper = Bset.upper_bound(upper_bound);
+        for (auto it = lower; it != upper; ++it) {
+            joinCount++;
+        }   
     }
-    cout<<"Process "<<id<<" join count: "<<joinCount<<"\n";
+    end_time = MPI_Wtime();
+    cout<<"Process "<<id<<" set join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
     MPI_Finalize ();
     return 0;
 }
