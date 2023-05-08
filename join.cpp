@@ -161,30 +161,30 @@ int main (int argc, char *argv[]) {
 
     // Insert inner relation into btree_set for hash join 
     // TODO: Should this be multiset to allow duplicate entries in B? or can we assume deduplicated relations
-    double start_time = MPI_Wtime();
-    btree::btree_set<Row, Row_Compare> Bset; 
+    double start_time_set = MPI_Wtime();
+    btree::btree_multiset<Row, Row_Compare> Bset; 
     for (int i = 0; i < Bsize; ++i) {
         Bset.insert(recvB[i]);
     }
     double end_time = MPI_Wtime();
-    cout<<"Time to insert B into set: "<<end_time - start_time<<"\n";
+    // cout<<"Time to insert B into set: "<<end_time - start_time_set<<"\n";
 
     // Count number of joined elements manually
-    start_time = MPI_Wtime();
-    int joinCount = 0;
-    for (int i = 0; i < Asize; ++i) {
-        for (int j = 0; j < Bsize; ++j) {
-            if (recvA[i].x == recvB[j].x) {
-                ++joinCount;
-            }
-        }
-    }
-    end_time = MPI_Wtime();
-    cout<<"Process "<<id<<" basic join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
+    // start_time = MPI_Wtime();
+    // int joinCount = 0;
+    // for (int i = 0; i < Asize; ++i) {
+    //     for (int j = 0; j < Bsize; ++j) {
+    //         if (recvA[i].x == recvB[j].x) {
+    //             ++joinCount;
+    //         }
+    //     }
+    // }
+    // end_time = MPI_Wtime();
+    // cout<<"Process "<<id<<" basic join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
 
     // Count number of joined elements with btree
-    start_time = MPI_Wtime();
-    joinCount = 0;
+    double start_time = MPI_Wtime();
+    int joinCount = 0;
     for (int i = 0; i < Asize; ++i) {
         // Get lower and upper bound of elements with the same x column
         Row lower_bound = {recvA[i].x, std::numeric_limits<uint>::min()};
@@ -196,7 +196,23 @@ int main (int argc, char *argv[]) {
         }   
     }
     end_time = MPI_Wtime();
-    cout<<"Process "<<id<<" set join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
+    // cout<<"Process "<<id<<" set join count: "<<joinCount<<" and time: "<<end_time - start_time<<"\n";
+
+    // Get the total join count
+    int sumJoinCount;
+    MPI_Reduce(&joinCount, &sumJoinCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (id == 0) {
+        cout << "Join count: " << sumJoinCount << "\n";
+    }
+
+    // Get the total time 
+    double localTime = end_time - start_time_set;
+    double maxTime;
+    MPI_Reduce(&localTime, &maxTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    if (id == 0) {
+        cout << "Join time: " << maxTime << "\n";
+    }
+
     MPI_Finalize ();
     return 0;
 }
